@@ -8,6 +8,7 @@
   "devDependencies": {
     "babelify": "^6.1.2",
     "flyd": "^0.1.13",
-    "ramda": "^0.15.1"
+    "ramda": "^0.15.1",
+    "flyd-lift": "^1.0.2"
   }
 }
