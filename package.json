@@ -1,0 +1,13 @@
+{
+  "name": "flyd-playground",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "author": "Raine Virta <raine.virta@gmail.com>",
+  "license": "ISC",
+  "devDependencies": {
+    "babelify": "^6.1.2",
+    "flyd": "^0.1.13",
+    "ramda": "^0.15.1"
+  }
+}

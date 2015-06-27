@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+watchify main.js -v -t babelify --outfile build.js &
+PIDS[0]=$!
+browser-sync start --server --files="index.html, build.js" &
+PIDS[1]=$!
+
+trap "kill ${PIDS[*]}" SIGINT
+wait
