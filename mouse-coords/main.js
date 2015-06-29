@@ -10,6 +10,6 @@ const mouse$ = (function() {
 }());
 
 const formatCoords = (coords) => `(${coords.x}, ${coords.y})`;
-const render = pipe(formatCoords, setProp(document.body, 'innerHTML'));
+const render = pipe(formatCoords, setProp(document.getElementById('mouse'), 'innerHTML'));
 
 flyd.on(render, mouse$);
