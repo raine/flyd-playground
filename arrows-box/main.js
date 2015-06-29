@@ -1,6 +1,6 @@
 const flyd = require('flyd');
 const {stream} = flyd;
-const {__, liftN, curry, pipe, always, merge, props, apply, identity, unapply, partialRight, map, join} = require('ramda');
+const {__, liftN, curry, pipe, always, merge, props, apply, identity, unapply, partialRight, map, join, createMapEntry} = require('ramda');
 
 const setProp = curry((prop, value, obj) => obj[prop] = value);
 const setInnerHTML = setProp('innerHTML');
@@ -76,6 +76,21 @@ const keys$ = (function() {
   }));
 }());
 
+const space$ = (function() {
+  const SPACE_KEY_CODE = 32;
+  const space = stream(false);
+
+  document.addEventListener('keydown', function(ev) {
+    if (ev.keyCode === SPACE_KEY_CODE) space(true);
+  }, false);
+
+  document.addEventListener('keyup', function(ev) {
+    if (ev.keyCode === SPACE_KEY_CODE) space(false);
+  }, false);
+
+  return space;
+}());
+
 const init = always({
   x  : 0,
   y  : 0,
@@ -91,20 +106,20 @@ const physics = (t, model) => {
 };
 
 const step = (model, streams) => {
-  const [dir, t] = streams;
-  return move(dir, physics(t, model));
+  const [dir, t, space] = streams;
+  return move(dir, space, physics(t, model));
 };
 
-const move = function(dir, model) {
+const move = function(dir, space, model) {
   return merge(model, {
-    vx: dir.x * 0.05,
-    vy: dir.y * 0.05
+    vx: dir.x * (space ? 0.20 : 0.05),
+    vy: dir.y * (space ? 0.20 : 0.05)
   });
 };
 
 const box = document.getElementById('box');
 const render = pipe(props(['x', 'y']), apply(setPos(box)));
-const model$ = flyd.scan(step, init(), liftN(2, unapply(identity))(keys$, fps$));
+const model$ = flyd.scan(step, init(), liftN(3, unapply(identity))(keys$, fps$, space$));
 
 flyd.on(render, model$);
 
@@ -115,4 +130,4 @@ const printStreams = pipe(
   setInnerHTML(__, document.getElementById('debug'))
 );
 
-liftN(2, printStreams)(keys$, model$)
+liftN(3, printStreams)(keys$, model$, space$.map(createMapEntry('space')))
