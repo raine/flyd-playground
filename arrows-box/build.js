@@ -21,6 +21,7 @@ var unapply = _require.unapply;
 var partialRight = _require.partialRight;
 var map = _require.map;
 var join = _require.join;
+var createMapEntry = _require.createMapEntry;
 
 var setProp = curry(function (prop, value, obj) {
   return obj[prop] = value;
@@ -90,6 +91,21 @@ var keys$ = (function () {
   }));
 })();
 
+var space$ = (function () {
+  var SPACE_KEY_CODE = 32;
+  var space = stream(false);
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev.keyCode === SPACE_KEY_CODE) space(true);
+  }, false);
+
+  document.addEventListener('keyup', function (ev) {
+    if (ev.keyCode === SPACE_KEY_CODE) space(false);
+  }, false);
+
+  return space;
+})();
+
 var init = always({
   x: 0,
   y: 0,
@@ -105,30 +121,31 @@ var physics = function physics(t, model) {
 };
 
 var step = function step(model, streams) {
-  var _streams = _slicedToArray(streams, 2);
+  var _streams = _slicedToArray(streams, 3);
 
   var dir = _streams[0];
   var t = _streams[1];
+  var space = _streams[2];
 
-  return move(dir, physics(t, model));
+  return move(dir, space, physics(t, model));
 };
 
-var move = function move(dir, model) {
+var move = function move(dir, space, model) {
   return merge(model, {
-    vx: dir.x * 0.05,
-    vy: dir.y * 0.05
+    vx: dir.x * (space ? 0.20 : 0.05),
+    vy: dir.y * (space ? 0.20 : 0.05)
   });
 };
 
 var box = document.getElementById('box');
 var render = pipe(props(['x', 'y']), apply(setPos(box)));
-var model$ = flyd.scan(step, init(), liftN(2, unapply(identity))(keys$, fps$));
+var model$ = flyd.scan(step, init(), liftN(3, unapply(identity))(keys$, fps$, space$));
 
 flyd.on(render, model$);
 
 var printStreams = pipe(unapply(identity), map(stringify), join('\n\n'), setInnerHTML(__, document.getElementById('debug')));
 
-liftN(2, printStreams)(keys$, model$);
+liftN(3, printStreams)(keys$, model$, space$.map(createMapEntry('space')));
 
 },{"flyd":2,"ramda":9}],2:[function(require,module,exports){
 var curryN = require('ramda/src/curryN');
