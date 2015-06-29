@@ -1,15 +1,10 @@
 const flyd = require('flyd');
 const {stream} = flyd;
-const {__, liftN, curry, pipe, always, merge, props, apply, inc, evolve, identity, unapply, add, comparator, gt, path, partialRight, equals} = require('ramda');
+const {__, liftN, curry, pipe, always, merge, props, apply, identity, unapply, partialRight, map, join} = require('ramda');
 
 const setProp = curry((prop, value, obj) => obj[prop] = value);
 const setInnerHTML = setProp('innerHTML');
 const stringify = partialRight(JSON.stringify, null, 2);
-
-const init = always({
-  x: 0,
-  y: 0
-});
 
 const setPos = curry((elem, left, top) => {
   elem.style.left = left + 'px';
@@ -40,7 +35,8 @@ const fps$ = (function() {
   const s = flyd.stream();
   (function frame(time) {
     window.requestAnimationFrame(frame);
-    s(1000 / (time - oldTime));
+    var d = time - oldTime;
+    if (d > 0) s(1000 / d);
     oldTime = time;
   }());
   return s;
@@ -80,13 +76,30 @@ const keys$ = (function() {
   }));
 }());
 
-// TODO: move fps
-const step = function(model, streams) {
-  const [keys, fps] = streams;
-  return evolve({
-    x: add(keys.x),
-    y: add(keys.y)
-  }, model);
+const init = always({
+  x  : 0,
+  y  : 0,
+  vx : 0,
+  vy : 0
+});
+
+const physics = (t, model) => {
+  return merge(model, {
+    x: model.x + t * model.vx,
+    y: model.y + t * model.vy
+  });
+};
+
+const step = (model, streams) => {
+  const [dir, t] = streams;
+  return move(dir, physics(t, model));
+};
+
+const move = function(dir, model) {
+  return merge(model, {
+    vx: dir.x * 0.05,
+    vy: dir.y * 0.05
+  });
 };
 
 const box = document.getElementById('box');
@@ -95,12 +108,11 @@ const model$ = flyd.scan(step, init(), liftN(2, unapply(identity))(keys$, fps$))
 
 flyd.on(render, model$);
 
-flyd.on(pipe(
-  stringify,
-  setInnerHTML(__, document.getElementById('model'))
-), model$);
+const printStreams = pipe(
+  unapply(identity),
+  map(stringify),
+  join('\n\n'),
+  setInnerHTML(__, document.getElementById('debug'))
+);
 
-flyd.on(pipe(
-  stringify,
-  setInnerHTML(__, document.getElementById('keys'))
-), keys$);
+liftN(2, printStreams)(keys$, model$)
