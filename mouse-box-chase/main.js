@@ -14,7 +14,7 @@ const mouse$ = (function() {
 }());
 
 const fps$ = (function() {
-  var oldTime = +new Date;
+  var oldTime = Date.now();
   const s = flyd.stream();
   (function frame(time) {
     window.requestAnimationFrame(frame);
@@ -27,7 +27,7 @@ const fps$ = (function() {
 const init = always({
   x: 0,
   y: 0,
-  v: 1,
+  v: 1
 });
 
 const setPos = curry((elem, left, top) => {
@@ -65,13 +65,13 @@ const slider$ = (function() {
   const slider = document.getElementById('velocity');
   const s = flyd.stream();
   s(slider.value);
-  slider.addEventListener('input', pipe(targetValue, s))
+  slider.addEventListener('input', pipe(targetValue, s));
   return s;
 }());
 
 const box = document.getElementById('box');
 const render = pipe(props(['x', 'y']), centerToElem(box), apply(setPos(box)));
-const model$ = flyd.scan(step, init(), lift(unapply(identity), fps$, mouse$, slider$.map(parseInt)))
+const model$ = flyd.scan(step, init(), lift(unapply(identity), fps$, mouse$, slider$.map(parseInt)));
 // model$.map(console.log.bind(console));
 
 flyd.on(render, model$);

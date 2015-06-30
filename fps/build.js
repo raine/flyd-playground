@@ -10,7 +10,7 @@ var pipe = _require.pipe;
 var invoker = _require.invoker;
 
 var fps$ = (function () {
-  var oldTime = +new Date();
+  var oldTime = Date.now();
   var s = flyd.stream();
   (function frame(time) {
     window.requestAnimationFrame(frame);

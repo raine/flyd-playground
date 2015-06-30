@@ -2,7 +2,7 @@ const flyd = require('flyd');
 const {curry, pipe, invoker} = require('ramda');
 
 const fps$ = (function() {
-  var oldTime = +new Date;
+  var oldTime = Date.now();
   const s = flyd.stream();
   (function frame(time) {
     window.requestAnimationFrame(frame);

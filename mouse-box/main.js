@@ -22,8 +22,8 @@ const setPos = curry((elem, left, top) => {
 const centerToElem = curry((elem, coords) => {
   const [w, h] = [elem.offsetWidth, elem.offsetHeight];
   return {
-    x: coords.x - w/2,
-    y: coords.y - h/2
+    x: coords.x - w / 2,
+    y: coords.y - h / 2
   };
 });
 
