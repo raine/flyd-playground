@@ -91,11 +91,56 @@ var printStreams = pipe(unapply(identity), map(stringify), join('\n\n'), setInne
 
 liftN(3, printStreams)(arrows$, model$, space$.map(createMapEntry('space')));
 
-},{"flyd":5,"flyd-keyboard":2,"ramda":12}],2:[function(require,module,exports){
+},{"flyd":13,"flyd-keyboard":2,"ramda":20}],2:[function(require,module,exports){
 var stream = require('flyd').stream;
 var dropRepeats = require('flyd-droprepeats').dropRepeats;
 var dropRepeatsWith = require('flyd-droprepeats').dropRepeatsWith;
 var keycode = require('keycode');
+var flyd = require('flyd');
+var scanMerge = require('flyd-scanmerge');
+
+exports.keysDown = keysDown = function() {
+  var kds = stream();
+  var kus = stream();
+  var keysDown = state(kds, kus);
+
+  document.addEventListener('keydown', function(ev) {
+    // Prevent repeated events for the same key.
+    // dropRepeats can't be used on `kds` because it won't deactivate after
+    // `kus` has fired for the same key. Other (heavier?) option would be to
+    // do dropRepeatsWith(deepEqual) for keysDown.
+    var c = ev.keyCode;
+    if (keysDown().indexOf(c) < 0) kds(c);
+  }, false);
+
+  document.addEventListener('keyup', function(ev) {
+    kus(ev.keyCode);
+  }, false);
+
+  return keysDown;
+};
+
+exports.keyDowns = function() {
+  var prev = [];
+  var keysDown$ = keysDown();
+  return stream([keysDown$], function(self) {
+    var cur  = keysDown$();
+    var last = cur.slice(-1)[0];
+    if (last && prev.indexOf(last) < 0)
+      self(last);
+    prev = cur;
+  });
+};
+
+exports.presses = function() {
+  var presses = stream();
+
+  document.addEventListener('keypress', function(ev) {
+    presses(ev.keyCode);
+  }, false);
+  
+  return presses;
+};
 
 exports.key = function(key) {
   var ks = stream(false);
@@ -145,7 +190,20 @@ function eqCoords(a, b) {
   return a && b && a.x === b.x && a.y === b.y;
 };
 
-},{"flyd":5,"flyd-droprepeats":3,"keycode":4}],3:[function(require,module,exports){
+function state(add, remove) {
+  return scanMerge([
+    [add, function(mem, a) {
+      return mem.concat(a);
+    }],
+    [remove, function(mem, a) {
+      return mem.filter(function(b) {
+        return a !== b;
+      });
+    }],
+  ], []);
+}
+
+},{"flyd":5,"flyd-droprepeats":3,"flyd-scanmerge":4,"keycode":12}],3:[function(require,module,exports){
 var flyd = require('flyd');
 
 function dropRepeatsWith(eq, s) {
@@ -169,155 +227,21 @@ function strictEq(a, b) {
 }
 
 },{"flyd":5}],4:[function(require,module,exports){
-// Source: http://jsfiddle.net/vWx8V/
-// http://stackoverflow.com/questions/5603195/full-list-of-javascript-keycodes
+var flyd = require('flyd');
 
+module.exports = flyd.curryN(2, function(pairs, acc) {
+  var streams = pairs.map(function(p) { return p[0]; });
+  var fns = pairs.map(function(p) { return p[1]; });
+  return flyd.immediate(flyd.stream(streams, function(self, changed) {
+    if (changed.length > 0) {
+      var idx = streams.indexOf(changed[0]);
+      acc = fns[idx](acc, changed[0]());
+    }
+    return acc;
+  }));
+});
 
-
-/**
- * Conenience method returns corresponding value for given keyName or keyCode.
- *
- * @param {Mixed} keyCode {Number} or keyName {String}
- * @return {Mixed}
- * @api public
- */
-
-exports = module.exports = function(searchInput) {
-  // Keyboard Events
-  if (searchInput && 'object' === typeof searchInput) {
-    var hasKeyCode = searchInput.which || searchInput.keyCode || searchInput.charCode
-    if (hasKeyCode) searchInput = hasKeyCode
-  }
-
-  // Numbers
-  if ('number' === typeof searchInput) return names[searchInput]
-
-  // Everything else (cast to string)
-  var search = String(searchInput)
-
-  // check codes
-  var foundNamedKey = codes[search.toLowerCase()]
-  if (foundNamedKey) return foundNamedKey
-
-  // check aliases
-  var foundNamedKey = aliases[search.toLowerCase()]
-  if (foundNamedKey) return foundNamedKey
-
-  // weird character?
-  if (search.length === 1) return search.charCodeAt(0)
-
-  return undefined
-}
-
-/**
- * Get by name
- *
- *   exports.code['enter'] // => 13
- */
-
-var codes = exports.code = exports.codes = {
-  'backspace': 8,
-  'tab': 9,
-  'enter': 13,
-  'shift': 16,
-  'ctrl': 17,
-  'alt': 18,
-  'pause/break': 19,
-  'caps lock': 20,
-  'esc': 27,
-  'space': 32,
-  'page up': 33,
-  'page down': 34,
-  'end': 35,
-  'home': 36,
-  'left': 37,
-  'up': 38,
-  'right': 39,
-  'down': 40,
-  'insert': 45,
-  'delete': 46,
-  'command': 91,
-  'right click': 93,
-  'numpad *': 106,
-  'numpad +': 107,
-  'numpad -': 109,
-  'numpad .': 110,
-  'numpad /': 111,
-  'num lock': 144,
-  'scroll lock': 145,
-  'my computer': 182,
-  'my calculator': 183,
-  ';': 186,
-  '=': 187,
-  ',': 188,
-  '-': 189,
-  '.': 190,
-  '/': 191,
-  '`': 192,
-  '[': 219,
-  '\\': 220,
-  ']': 221,
-  "'": 222,
-}
-
-// Helper aliases
-
-var aliases = exports.aliases = {
-  'windows': 91,
-  '⇧': 16,
-  '⌥': 18,
-  '⌃': 17,
-  '⌘': 91,
-  'ctl': 17,
-  'control': 17,
-  'option': 18,
-  'pause': 19,
-  'break': 19,
-  'caps': 20,
-  'return': 13,
-  'escape': 27,
-  'spc': 32,
-  'pgup': 33,
-  'pgdn': 33,
-  'ins': 45,
-  'del': 46,
-  'cmd': 91
-}
-
-
-/*!
- * Programatically add the following
- */
-
-// lower case chars
-for (i = 97; i < 123; i++) codes[String.fromCharCode(i)] = i - 32
-
-// numbers
-for (var i = 48; i < 58; i++) codes[i - 48] = i
-
-// function keys
-for (i = 1; i < 13; i++) codes['f'+i] = i + 111
-
-// numpad keys
-for (i = 0; i < 10; i++) codes['numpad '+i] = i + 96
-
-/**
- * Get by code
- *
- *   exports.name[13] // => 'Enter'
- */
-
-var names = exports.names = exports.title = {} // title for backward compat
-
-// Create reverse mapping
-for (i in codes) names[codes[i]] = i
-
-// Add aliases
-for (var alias in aliases) {
-  codes[alias] = aliases[alias]
-}
-
-},{}],5:[function(require,module,exports){
+},{"flyd":5}],5:[function(require,module,exports){
 var curryN = require('ramda/src/curryN');
 
 'use strict';
@@ -850,6 +774,461 @@ module.exports = function _slice(args, from, to) {
 };
 
 },{}],12:[function(require,module,exports){
+// Source: http://jsfiddle.net/vWx8V/
+// http://stackoverflow.com/questions/5603195/full-list-of-javascript-keycodes
+
+
+
+/**
+ * Conenience method returns corresponding value for given keyName or keyCode.
+ *
+ * @param {Mixed} keyCode {Number} or keyName {String}
+ * @return {Mixed}
+ * @api public
+ */
+
+exports = module.exports = function(searchInput) {
+  // Keyboard Events
+  if (searchInput && 'object' === typeof searchInput) {
+    var hasKeyCode = searchInput.which || searchInput.keyCode || searchInput.charCode
+    if (hasKeyCode) searchInput = hasKeyCode
+  }
+
+  // Numbers
+  if ('number' === typeof searchInput) return names[searchInput]
+
+  // Everything else (cast to string)
+  var search = String(searchInput)
+
+  // check codes
+  var foundNamedKey = codes[search.toLowerCase()]
+  if (foundNamedKey) return foundNamedKey
+
+  // check aliases
+  var foundNamedKey = aliases[search.toLowerCase()]
+  if (foundNamedKey) return foundNamedKey
+
+  // weird character?
+  if (search.length === 1) return search.charCodeAt(0)
+
+  return undefined
+}
+
+/**
+ * Get by name
+ *
+ *   exports.code['enter'] // => 13
+ */
+
+var codes = exports.code = exports.codes = {
+  'backspace': 8,
+  'tab': 9,
+  'enter': 13,
+  'shift': 16,
+  'ctrl': 17,
+  'alt': 18,
+  'pause/break': 19,
+  'caps lock': 20,
+  'esc': 27,
+  'space': 32,
+  'page up': 33,
+  'page down': 34,
+  'end': 35,
+  'home': 36,
+  'left': 37,
+  'up': 38,
+  'right': 39,
+  'down': 40,
+  'insert': 45,
+  'delete': 46,
+  'command': 91,
+  'right click': 93,
+  'numpad *': 106,
+  'numpad +': 107,
+  'numpad -': 109,
+  'numpad .': 110,
+  'numpad /': 111,
+  'num lock': 144,
+  'scroll lock': 145,
+  'my computer': 182,
+  'my calculator': 183,
+  ';': 186,
+  '=': 187,
+  ',': 188,
+  '-': 189,
+  '.': 190,
+  '/': 191,
+  '`': 192,
+  '[': 219,
+  '\\': 220,
+  ']': 221,
+  "'": 222,
+}
+
+// Helper aliases
+
+var aliases = exports.aliases = {
+  'windows': 91,
+  '⇧': 16,
+  '⌥': 18,
+  '⌃': 17,
+  '⌘': 91,
+  'ctl': 17,
+  'control': 17,
+  'option': 18,
+  'pause': 19,
+  'break': 19,
+  'caps': 20,
+  'return': 13,
+  'escape': 27,
+  'spc': 32,
+  'pgup': 33,
+  'pgdn': 33,
+  'ins': 45,
+  'del': 46,
+  'cmd': 91
+}
+
+
+/*!
+ * Programatically add the following
+ */
+
+// lower case chars
+for (i = 97; i < 123; i++) codes[String.fromCharCode(i)] = i - 32
+
+// numbers
+for (var i = 48; i < 58; i++) codes[i - 48] = i
+
+// function keys
+for (i = 1; i < 13; i++) codes['f'+i] = i + 111
+
+// numpad keys
+for (i = 0; i < 10; i++) codes['numpad '+i] = i + 96
+
+/**
+ * Get by code
+ *
+ *   exports.name[13] // => 'Enter'
+ */
+
+var names = exports.names = exports.title = {} // title for backward compat
+
+// Create reverse mapping
+for (i in codes) names[codes[i]] = i
+
+// Add aliases
+for (var alias in aliases) {
+  codes[alias] = aliases[alias]
+}
+
+},{}],13:[function(require,module,exports){
+var curryN = require('ramda/src/curryN');
+
+'use strict';
+
+function isFunction(obj) {
+  return !!(obj && obj.constructor && obj.call && obj.apply);
+}
+
+// Globals
+var toUpdate = [];
+var inStream;
+
+function map(f, s) {
+  return stream([s], function(self) { self(f(s.val)); });
+}
+
+function on(f, s) {
+  stream([s], function() { f(s.val); });
+}
+
+function boundMap(f) { return map(f, this); }
+
+var scan = curryN(3, function(f, acc, s) {
+  var ns = stream([s], function() {
+    return (acc = f(acc, s()));
+  });
+  if (!ns.hasVal) ns(acc);
+  return ns;
+});
+
+var merge = curryN(2, function(s1, s2) {
+  var s = immediate(stream([s1, s2], function(n, changed) {
+    return changed[0] ? changed[0]()
+         : s1.hasVal  ? s1()
+                      : s2();
+  }));
+  endsOn(stream([s1.end, s2.end], function(self, changed) {
+    return true;
+  }), s);
+  return s;
+});
+
+function ap(s2) {
+  var s1 = this;
+  return stream([s1, s2], function() { return s1()(s2()); });
+}
+
+function initialDepsNotMet(stream) {
+  stream.depsMet = stream.deps.every(function(s) {
+    return s.hasVal;
+  });
+  return !stream.depsMet;
+}
+
+function updateStream(s) {
+  if ((s.depsMet !== true && initialDepsNotMet(s)) ||
+      (s.end !== undefined && s.end.val === true)) return;
+  if (inStream !== undefined) {
+    toUpdate.push(s);
+    return;
+  }
+  inStream = s;
+  var returnVal = s.fn(s, s.depsChanged);
+  if (returnVal !== undefined) {
+    s(returnVal);
+  }
+  inStream = undefined;
+  if (s.depsChanged !== undefined) s.depsChanged = [];
+  s.shouldUpdate = false;
+  if (flushing === false) flushUpdate();
+}
+
+var order = [];
+var orderNextIdx = -1;
+
+function findDeps(s) {
+  var i, listeners = s.listeners;
+  if (s.queued === false) {
+    s.queued = true;
+    for (i = 0; i < listeners.length; ++i) {
+      findDeps(listeners[i]);
+    }
+    order[++orderNextIdx] = s;
+  }
+}
+
+function updateDeps(s) {
+  var i, o, list, listeners = s.listeners;
+  for (i = 0; i < listeners.length; ++i) {
+    list = listeners[i];
+    if (list.end === s) {
+      endStream(list);
+    } else {
+      if (list.depsChanged !== undefined) list.depsChanged.push(s);
+      list.shouldUpdate = true;
+      findDeps(list);
+    }
+  }
+  for (; orderNextIdx >= 0; --orderNextIdx) {
+    o = order[orderNextIdx];
+    if (o.shouldUpdate === true) updateStream(o);
+    o.queued = false;
+  }
+}
+
+var flushing = false;
+
+function flushUpdate() {
+  flushing = true;
+  while (toUpdate.length > 0) {
+    var s = toUpdate.shift();
+    if (s.vals.length > 0) s.val = s.vals.shift();
+    updateDeps(s);
+  }
+  flushing = false;
+}
+
+function isStream(stream) {
+  return isFunction(stream) && 'hasVal' in stream;
+}
+
+function streamToString() {
+  return 'stream(' + this.val + ')';
+}
+
+function updateStreamValue(s, n) {
+  if (n !== undefined && n !== null && isFunction(n.then)) {
+    n.then(s);
+    return;
+  }
+  s.val = n;
+  s.hasVal = true;
+  if (inStream === undefined) {
+    flushing = true;
+    updateDeps(s);
+    if (toUpdate.length > 0) flushUpdate(); else flushing = false;
+  } else if (inStream === s) {
+    markListeners(s, s.listeners);
+  } else {
+    s.vals.push(n);
+    toUpdate.push(s);
+  }
+}
+
+function markListeners(s, lists) {
+  var i, list;
+  for (i = 0; i < lists.length; ++i) {
+    list = lists[i];
+    if (list.end !== s) {
+      if (list.depsChanged !== undefined) {
+        list.depsChanged.push(s);
+      }
+      list.shouldUpdate = true;
+    } else {
+      endStream(list);
+    }
+  }
+}
+
+function createStream() {
+  function s(n) {
+    var i, list;
+    if (arguments.length === 0) {
+      return s.val;
+    } else {
+      updateStreamValue(s, n);
+      return s;
+    }
+  }
+  s.hasVal = false;
+  s.val = undefined;
+  s.vals = [];
+  s.listeners = [];
+  s.queued = false;
+  s.end = undefined;
+
+  s.map = boundMap;
+  s.ap = ap;
+  s.of = stream;
+  s.toString = streamToString;
+
+  return s;
+}
+
+function addListeners(deps, s) {
+  for (var i = 0; i < deps.length; ++i) {
+    deps[i].listeners.push(s);
+  }
+}
+
+function createDependentStream(deps, fn) {
+  var i, s = createStream();
+  s.fn = fn;
+  s.deps = deps;
+  s.depsMet = false;
+  s.depsChanged = fn.length > 1 ? [] : undefined;
+  s.shouldUpdate = false;
+  addListeners(deps, s);
+  return s;
+}
+
+function immediate(s) {
+  if (s.depsMet === false) {
+    s.depsMet = true;
+    updateStream(s);
+  }
+  return s;
+}
+
+function removeListener(s, listeners) {
+  var idx = listeners.indexOf(s);
+  listeners[idx] = listeners[listeners.length - 1];
+  listeners.length--;
+}
+
+function detachDeps(s) {
+  for (var i = 0; i < s.deps.length; ++i) {
+    removeListener(s, s.deps[i].listeners);
+  }
+  s.deps.length = 0;
+}
+
+function endStream(s) {
+  if (s.deps !== undefined) detachDeps(s);
+  if (s.end !== undefined) detachDeps(s.end);
+}
+
+function endsOn(endS, s) {
+  detachDeps(s.end);
+  endS.listeners.push(s.end);
+  s.end.deps.push(endS);
+  return s;
+}
+
+function trueFn() { return true; }
+
+function stream(arg, fn) {
+  var i, s, deps, depEndStreams;
+  var endStream = createDependentStream([], trueFn);
+  if (arguments.length > 1) {
+    deps = []; depEndStreams = [];
+    for (i = 0; i < arg.length; ++i) {
+      if (arg[i] !== undefined) {
+        deps.push(arg[i]);
+        if (arg[i].end !== undefined) depEndStreams.push(arg[i].end);
+      }
+    }
+    s = createDependentStream(deps, fn);
+    s.end = endStream;
+    endStream.listeners.push(s);
+    addListeners(depEndStreams, endStream);
+    endStream.deps = depEndStreams;
+    updateStream(s);
+  } else {
+    s = createStream();
+    s.end = endStream;
+    endStream.listeners.push(s);
+    if (arguments.length === 1) s(arg);
+  }
+  return s;
+}
+
+var transduce = curryN(2, function(xform, source) {
+  xform = xform(new StreamTransformer());
+  return stream([source], function(self) {
+    var res = xform['@@transducer/step'](undefined, source());
+    if (res && res['@@transducer/reduced'] === true) {
+      self.end(true);
+      return res['@@transducer/value'];
+    } else {
+      return res;
+    }
+  });
+});
+
+function StreamTransformer() { }
+StreamTransformer.prototype['@@transducer/init'] = function() { };
+StreamTransformer.prototype['@@transducer/result'] = function() { };
+StreamTransformer.prototype['@@transducer/step'] = function(s, v) { return v; };
+
+module.exports = {
+  stream: stream,
+  isStream: isStream,
+  transduce: transduce,
+  merge: merge,
+  scan: scan,
+  endsOn: endsOn,
+  map: curryN(2, map),
+  on: curryN(2, on),
+  curryN: curryN,
+  immediate: immediate,
+};
+
+},{"ramda/src/curryN":16}],14:[function(require,module,exports){
+arguments[4][6][0].apply(exports,arguments)
+},{"dup":6}],15:[function(require,module,exports){
+arguments[4][7][0].apply(exports,arguments)
+},{"./internal/_curry2":18,"dup":7}],16:[function(require,module,exports){
+arguments[4][8][0].apply(exports,arguments)
+},{"./__":14,"./arity":15,"./internal/_curry2":18,"./internal/_slice":19,"dup":8}],17:[function(require,module,exports){
+arguments[4][9][0].apply(exports,arguments)
+},{"../__":14,"dup":9}],18:[function(require,module,exports){
+arguments[4][10][0].apply(exports,arguments)
+},{"../__":14,"./_curry1":17,"dup":10}],19:[function(require,module,exports){
+arguments[4][11][0].apply(exports,arguments)
+},{"dup":11}],20:[function(require,module,exports){
 //  Ramda v0.15.1
 //  https://github.com/ramda/ramda
 //  (c) 2013-2015 Scott Sauyet, Michael Hurley, and David Chambers
