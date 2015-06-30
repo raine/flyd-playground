@@ -4,7 +4,7 @@ const {curry, pipe} = require('ramda');
 const setProp = curry((obj, prop, value) => obj[prop] = value);
 const mouse$ = (function() {
   const s = flyd.stream();
-  window.addEventListener('mousemove', (ev) => 
+  window.addEventListener('mousemove', (ev) =>
     s({ x: ev.x, y: ev.y }));
   return s;
 }());
