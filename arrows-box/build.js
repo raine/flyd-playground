@@ -4,6 +4,7 @@
 var _slicedToArray = (function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i['return']) _i['return'](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError('Invalid attempt to destructure non-iterable instance'); } }; })();
 
 var flyd = require('flyd');
+var kb = require('flyd-keyboard');
 var stream = flyd.stream;
 
 var _require = require('ramda');
@@ -34,27 +35,8 @@ var setPos = curry(function (elem, left, top) {
   elem.style.top = top + 'px';
 });
 
-function strictEq(a, b) {
-  return a === b;
-}
-
-var skipDuplicates = function skipDuplicates(eq, s) {
-  if (flyd.isStream(eq)) {
-    s = eq;
-    eq = strictEq;
-  }
-
-  var prev;
-  return stream([s], function (self) {
-    if (!eq(s.val, prev)) {
-      self(s.val);
-      prev = s.val;
-    }
-  });
-};
-
 var fps$ = (function () {
-  var oldTime = +new Date();
+  var oldTime = Date.now();
   var s = flyd.stream();
   (function frame(time) {
     window.requestAnimationFrame(frame);
@@ -63,47 +45,6 @@ var fps$ = (function () {
     oldTime = time;
   })();
   return s;
-})();
-
-var keys$ = (function () {
-  var left = stream(false);
-  var right = stream(false);
-  var up = stream(false);
-  var down = stream(false);
-
-  document.addEventListener('keydown', function (ev) {
-    if (ev.keyCode === 37) left(true);else if (ev.keyCode === 39) right(true);else if (ev.keyCode === 38) up(true);else if (ev.keyCode === 40) down(true);
-  }, false);
-
-  document.addEventListener('keyup', function (ev) {
-    if (ev.keyCode === 37) left(false);else if (ev.keyCode === 39) right(false);else if (ev.keyCode === 38) up(false);else if (ev.keyCode === 40) down(false);
-  }, false);
-
-  var eqCoords = function eqCoords(a, b) {
-    return a && b && a.x === b.x && a.y === b.y;
-  };
-
-  return skipDuplicates(eqCoords, stream([left, right, up, down], function () {
-    return {
-      x: left() ? -1 : right() ? 1 : 0,
-      y: up() ? -1 : down() ? 1 : 0
-    };
-  }));
-})();
-
-var space$ = (function () {
-  var SPACE_KEY_CODE = 32;
-  var space = stream(false);
-
-  document.addEventListener('keydown', function (ev) {
-    if (ev.keyCode === SPACE_KEY_CODE) space(true);
-  }, false);
-
-  document.addEventListener('keyup', function (ev) {
-    if (ev.keyCode === SPACE_KEY_CODE) space(false);
-  }, false);
-
-  return space;
 })();
 
 var init = always({
@@ -120,6 +61,13 @@ var physics = function physics(t, model) {
   });
 };
 
+var move = function move(dir, space, model) {
+  return merge(model, {
+    vx: dir.x * (space ? 0.20 : 0.05),
+    vy: dir.y * (space ? 0.20 : 0.05)
+  });
+};
+
 var step = function step(model, streams) {
   var _streams = _slicedToArray(streams, 3);
 
@@ -130,24 +78,246 @@ var step = function step(model, streams) {
   return move(dir, space, physics(t, model));
 };
 
-var move = function move(dir, space, model) {
-  return merge(model, {
-    vx: dir.x * (space ? 0.20 : 0.05),
-    vy: dir.y * (space ? 0.20 : 0.05)
-  });
-};
+var arrows$ = kb.arrows();
+var space$ = kb.key('space');
 
 var box = document.getElementById('box');
 var render = pipe(props(['x', 'y']), apply(setPos(box)));
-var model$ = flyd.scan(step, init(), liftN(3, unapply(identity))(keys$, fps$, space$));
+var model$ = flyd.scan(step, init(), liftN(3, unapply(identity))(arrows$, fps$, space$));
 
 flyd.on(render, model$);
 
 var printStreams = pipe(unapply(identity), map(stringify), join('\n\n'), setInnerHTML(__, document.getElementById('debug')));
 
-liftN(3, printStreams)(keys$, model$, space$.map(createMapEntry('space')));
+liftN(3, printStreams)(arrows$, model$, space$.map(createMapEntry('space')));
 
-},{"flyd":2,"ramda":9}],2:[function(require,module,exports){
+},{"flyd":5,"flyd-keyboard":2,"ramda":12}],2:[function(require,module,exports){
+var stream = require('flyd').stream;
+var dropRepeats = require('flyd-droprepeats').dropRepeats;
+var dropRepeatsWith = require('flyd-droprepeats').dropRepeatsWith;
+var keycode = require('keycode');
+
+exports.key = function(key) {
+  var ks = stream(false);
+  var code = keycode(key);
+
+  document.addEventListener('keydown', function(ev) {
+    if (ev.keyCode === code) ks(true);
+  }, false);
+
+  document.addEventListener('keyup', function(ev) {
+    if (ev.keyCode === code) ks(false);
+  }, false);
+
+  return dropRepeats(ks);
+};
+
+exports.arrows = function(elem) {
+  var l = stream(false);
+  var r = stream(false);
+  var u = stream(false);
+  var d = stream(false);
+
+  document.addEventListener('keydown', function(ev) {
+    if      (ev.keyCode === 37) l(true);
+    else if (ev.keyCode === 39) r(true);
+    else if (ev.keyCode === 38) u(true);
+    else if (ev.keyCode === 40) d(true);
+  }, false);
+
+  document.addEventListener('keyup', function(ev) {
+    if      (ev.keyCode === 37) l(false);
+    else if (ev.keyCode === 39) r(false);
+    else if (ev.keyCode === 38) u(false);
+    else if (ev.keyCode === 40) d(false);
+  }, false);
+
+
+  return dropRepeatsWith(eqCoords, stream([l, r, u, d], function() {
+    return {
+      x: l() ? -1 : r() ? 1 : 0,
+      y: u() ? -1 : d() ? 1 : 0
+    };
+  }));
+};
+
+function eqCoords(a, b) {
+  return a && b && a.x === b.x && a.y === b.y;
+};
+
+},{"flyd":5,"flyd-droprepeats":3,"keycode":4}],3:[function(require,module,exports){
+var flyd = require('flyd');
+
+function dropRepeatsWith(eq, s) {
+  var prev;
+  return flyd.stream([s], function(self) {
+    if (!eq(s.val, prev)) {
+      self(s.val);
+      prev = s.val;
+    }
+  });
+}
+
+exports.dropRepeats = function(s) {
+  return dropRepeatsWith(strictEq, s);
+};
+
+exports.dropRepeatsWith = flyd.curryN(2, dropRepeatsWith);
+
+function strictEq(a, b) {
+  return a === b;
+}
+
+},{"flyd":5}],4:[function(require,module,exports){
+// Source: http://jsfiddle.net/vWx8V/
+// http://stackoverflow.com/questions/5603195/full-list-of-javascript-keycodes
+
+
+
+/**
+ * Conenience method returns corresponding value for given keyName or keyCode.
+ *
+ * @param {Mixed} keyCode {Number} or keyName {String}
+ * @return {Mixed}
+ * @api public
+ */
+
+exports = module.exports = function(searchInput) {
+  // Keyboard Events
+  if (searchInput && 'object' === typeof searchInput) {
+    var hasKeyCode = searchInput.which || searchInput.keyCode || searchInput.charCode
+    if (hasKeyCode) searchInput = hasKeyCode
+  }
+
+  // Numbers
+  if ('number' === typeof searchInput) return names[searchInput]
+
+  // Everything else (cast to string)
+  var search = String(searchInput)
+
+  // check codes
+  var foundNamedKey = codes[search.toLowerCase()]
+  if (foundNamedKey) return foundNamedKey
+
+  // check aliases
+  var foundNamedKey = aliases[search.toLowerCase()]
+  if (foundNamedKey) return foundNamedKey
+
+  // weird character?
+  if (search.length === 1) return search.charCodeAt(0)
+
+  return undefined
+}
+
+/**
+ * Get by name
+ *
+ *   exports.code['enter'] // => 13
+ */
+
+var codes = exports.code = exports.codes = {
+  'backspace': 8,
+  'tab': 9,
+  'enter': 13,
+  'shift': 16,
+  'ctrl': 17,
+  'alt': 18,
+  'pause/break': 19,
+  'caps lock': 20,
+  'esc': 27,
+  'space': 32,
+  'page up': 33,
+  'page down': 34,
+  'end': 35,
+  'home': 36,
+  'left': 37,
+  'up': 38,
+  'right': 39,
+  'down': 40,
+  'insert': 45,
+  'delete': 46,
+  'command': 91,
+  'right click': 93,
+  'numpad *': 106,
+  'numpad +': 107,
+  'numpad -': 109,
+  'numpad .': 110,
+  'numpad /': 111,
+  'num lock': 144,
+  'scroll lock': 145,
+  'my computer': 182,
+  'my calculator': 183,
+  ';': 186,
+  '=': 187,
+  ',': 188,
+  '-': 189,
+  '.': 190,
+  '/': 191,
+  '`': 192,
+  '[': 219,
+  '\\': 220,
+  ']': 221,
+  "'": 222,
+}
+
+// Helper aliases
+
+var aliases = exports.aliases = {
+  'windows': 91,
+  '⇧': 16,
+  '⌥': 18,
+  '⌃': 17,
+  '⌘': 91,
+  'ctl': 17,
+  'control': 17,
+  'option': 18,
+  'pause': 19,
+  'break': 19,
+  'caps': 20,
+  'return': 13,
+  'escape': 27,
+  'spc': 32,
+  'pgup': 33,
+  'pgdn': 33,
+  'ins': 45,
+  'del': 46,
+  'cmd': 91
+}
+
+
+/*!
+ * Programatically add the following
+ */
+
+// lower case chars
+for (i = 97; i < 123; i++) codes[String.fromCharCode(i)] = i - 32
+
+// numbers
+for (var i = 48; i < 58; i++) codes[i - 48] = i
+
+// function keys
+for (i = 1; i < 13; i++) codes['f'+i] = i + 111
+
+// numpad keys
+for (i = 0; i < 10; i++) codes['numpad '+i] = i + 96
+
+/**
+ * Get by code
+ *
+ *   exports.name[13] // => 'Enter'
+ */
+
+var names = exports.names = exports.title = {} // title for backward compat
+
+// Create reverse mapping
+for (i in codes) names[codes[i]] = i
+
+// Add aliases
+for (var alias in aliases) {
+  codes[alias] = aliases[alias]
+}
+
+},{}],5:[function(require,module,exports){
 var curryN = require('ramda/src/curryN');
 
 'use strict';
@@ -436,7 +606,7 @@ module.exports = {
   immediate: immediate,
 };
 
-},{"ramda/src/curryN":5}],3:[function(require,module,exports){
+},{"ramda/src/curryN":8}],6:[function(require,module,exports){
 /**
  * A special placeholder value used to specify "gaps" within curried functions,
  * allowing partial application of any combination of arguments,
@@ -463,7 +633,7 @@ module.exports = {
  */
 module.exports = {ramda: 'placeholder'};
 
-},{}],4:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 var _curry2 = require('./internal/_curry2');
 
 
@@ -510,7 +680,7 @@ module.exports = _curry2(function(n, fn) {
   }
 });
 
-},{"./internal/_curry2":7}],5:[function(require,module,exports){
+},{"./internal/_curry2":10}],8:[function(require,module,exports){
 var __ = require('./__');
 var _curry2 = require('./internal/_curry2');
 var _slice = require('./internal/_slice');
@@ -588,7 +758,7 @@ module.exports = _curry2(function curryN(length, fn) {
   });
 });
 
-},{"./__":3,"./arity":4,"./internal/_curry2":7,"./internal/_slice":8}],6:[function(require,module,exports){
+},{"./__":6,"./arity":7,"./internal/_curry2":10,"./internal/_slice":11}],9:[function(require,module,exports){
 var __ = require('../__');
 
 
@@ -612,7 +782,7 @@ module.exports = function _curry1(fn) {
   };
 };
 
-},{"../__":3}],7:[function(require,module,exports){
+},{"../__":6}],10:[function(require,module,exports){
 var __ = require('../__');
 var _curry1 = require('./_curry1');
 
@@ -646,7 +816,7 @@ module.exports = function _curry2(fn) {
   };
 };
 
-},{"../__":3,"./_curry1":6}],8:[function(require,module,exports){
+},{"../__":6,"./_curry1":9}],11:[function(require,module,exports){
 /**
  * An optimized, private array `slice` implementation.
  *
@@ -679,7 +849,7 @@ module.exports = function _slice(args, from, to) {
   }
 };
 
-},{}],9:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 //  Ramda v0.15.1
 //  https://github.com/ramda/ramda
 //  (c) 2013-2015 Scott Sauyet, Michael Hurley, and David Chambers

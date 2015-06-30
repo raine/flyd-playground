@@ -22,7 +22,7 @@ var mouse$ = (function () {
 var formatCoords = function formatCoords(coords) {
   return '(' + coords.x + ', ' + coords.y + ')';
 };
-var render = pipe(formatCoords, setProp(document.body, 'innerHTML'));
+var render = pipe(formatCoords, setProp(document.getElementById('mouse'), 'innerHTML'));
 
 flyd.on(render, mouse$);
 

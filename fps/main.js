@@ -14,6 +14,6 @@ const fps$ = (function() {
 
 const toFixed = invoker(1, 'toFixed');
 const setProp = curry((obj, prop, value) => obj[prop] = value);
-const render = pipe(toFixed(1), setProp(document.body, 'innerHTML'));
+const render = pipe(toFixed(1), setProp(document.getElementById('fps'), 'innerHTML'));
 
 flyd.on(render, fps$);

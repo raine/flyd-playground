@@ -1,4 +1,5 @@
 const flyd = require('flyd');
+const kb = require('flyd-keyboard');
 const {stream} = flyd;
 const {__, liftN, curry, pipe, always, merge, props, apply, identity, unapply, partialRight, map, join, createMapEntry} = require('ramda');
 
@@ -11,27 +12,8 @@ const setPos = curry((elem, left, top) => {
   elem.style.top  = top + 'px';
 });
 
-function strictEq(a, b) {
-  return a === b;
-}
-
-const skipDuplicates = function(eq, s) {
-  if (flyd.isStream(eq)) {
-    s  = eq;
-    eq = strictEq;
-  }
-
-  var prev;
-  return stream([s], function(self) {
-    if (!eq(s.val, prev)) {
-      self(s.val);
-      prev = s.val;
-    }
-  });
-};
-
 const fps$ = (function() {
-  var oldTime = +new Date;
+  var oldTime = Date.now();
   const s = flyd.stream();
   (function frame(time) {
     window.requestAnimationFrame(frame);
@@ -40,55 +22,6 @@ const fps$ = (function() {
     oldTime = time;
   }());
   return s;
-}());
-
-const keys$ = (function() {
-  const left  = stream(false);
-  const right = stream(false);
-  const up    = stream(false);
-  const down  = stream(false);
-
-  document.addEventListener('keydown', function(ev) {
-    if      (ev.keyCode === 37) left(true);
-    else if (ev.keyCode === 39) right(true);
-    else if (ev.keyCode === 38) up(true);
-    else if (ev.keyCode === 40) down(true);
-  }, false);
-
-  document.addEventListener('keyup', function(ev) {
-    if      (ev.keyCode === 37) left(false);
-    else if (ev.keyCode === 39) right(false);
-    else if (ev.keyCode === 38) up(false);
-    else if (ev.keyCode === 40) down(false);
-  }, false);
-
-  var eqCoords = function(a, b) {
-    return a && b && a.x === b.x && a.y === b.y;
-  };
-
-  return skipDuplicates(eqCoords, stream([left, right, up, down], function() {
-    return {
-      x: left()  ? -1 :
-         right() ?  1 : 0,
-      y: up()    ? -1 :
-         down()  ?  1 : 0
-    };
-  }));
-}());
-
-const space$ = (function() {
-  const SPACE_KEY_CODE = 32;
-  const space = stream(false);
-
-  document.addEventListener('keydown', function(ev) {
-    if (ev.keyCode === SPACE_KEY_CODE) space(true);
-  }, false);
-
-  document.addEventListener('keyup', function(ev) {
-    if (ev.keyCode === SPACE_KEY_CODE) space(false);
-  }, false);
-
-  return space;
 }());
 
 const init = always({
@@ -105,11 +38,6 @@ const physics = (t, model) => {
   });
 };
 
-const step = (model, streams) => {
-  const [dir, t, space] = streams;
-  return move(dir, space, physics(t, model));
-};
-
 const move = function(dir, space, model) {
   return merge(model, {
     vx: dir.x * (space ? 0.20 : 0.05),
@@ -117,9 +45,17 @@ const move = function(dir, space, model) {
   });
 };
 
+const step = (model, streams) => {
+  const [dir, t, space] = streams;
+  return move(dir, space, physics(t, model));
+};
+
+const arrows$ = kb.arrows();
+const space$ = kb.key('space');
+
 const box = document.getElementById('box');
 const render = pipe(props(['x', 'y']), apply(setPos(box)));
-const model$ = flyd.scan(step, init(), liftN(3, unapply(identity))(keys$, fps$, space$));
+const model$ = flyd.scan(step, init(), liftN(3, unapply(identity))(arrows$, fps$, space$));
 
 flyd.on(render, model$);
 
@@ -130,4 +66,4 @@ const printStreams = pipe(
   setInnerHTML(__, document.getElementById('debug'))
 );
 
-liftN(3, printStreams)(keys$, model$, space$.map(createMapEntry('space')))
+liftN(3, printStreams)(arrows$, model$, space$.map(createMapEntry('space')));

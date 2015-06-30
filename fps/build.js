@@ -24,7 +24,7 @@ var toFixed = invoker(1, 'toFixed');
 var setProp = curry(function (obj, prop, value) {
   return obj[prop] = value;
 });
-var render = pipe(toFixed(1), setProp(document.body, 'innerHTML'));
+var render = pipe(toFixed(1), setProp(document.getElementById('fps'), 'innerHTML'));
 
 flyd.on(render, fps$);
 
