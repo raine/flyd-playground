@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -ex
+
+dirs=`find . -type d -depth 1 | grep -v 'git\|dist\|node_modules'`
+for d in $dirs; do
+  browserify $d/main.js -t babelify --outfile $d/build.js
+  cp -R $d dist/
+done
+
+./deploy

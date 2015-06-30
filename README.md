@@ -14,5 +14,5 @@ playing around with [flyd](https://github.com/paldepind/flyd)
 npm install
 npm install -g watchify browser-sync
 cd mouse-coords
-../watch
+../scripts/watch
 ```
