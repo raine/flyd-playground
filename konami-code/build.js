@@ -1,61 +1,79 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 'use strict';
 
-var _slicedToArray = (function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i['return']) _i['return'](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError('Invalid attempt to destructure non-iterable instance'); } }; })();
-
 var flyd = require('flyd');
 var stream = flyd.stream;
 
 var kb = require('flyd-keyboard');
-var ffilter = require('flyd-filter');
+var forwardTo = require('flyd-forwardto');
 var timeInterval = require('flyd-timeinterval');
+var inLast = require('flyd-inlast');
 
-var _require = require('ramda');
+var _require = require('../utils');
 
-var T = _require.T;
-var map = _require.map;
-var liftN = _require.liftN;
-var prop = _require.prop;
-var unapply = _require.unapply;
-var identity = _require.identity;
-var invoker = _require.invoker;
-var forEach = _require.forEach;
-var __ = _require.__;
-var pipe = _require.pipe;
-var length = _require.length;
-var equals = _require.equals;
-var compose = _require.compose;
-var filter = _require.filter;
-var partial = _require.partial;
+var stringify = _require.stringify;
 
+var Type = require('union-type');
+
+var _require2 = require('ramda');
+
+var curry = _require2.curry;
+var T = _require2.T;
+var map = _require2.map;
+var liftN = _require2.liftN;
+var prop = _require2.prop;
+var invoker = _require2.invoker;
+var forEach = _require2.forEach;
+var __ = _require2.__;
+var pipe = _require2.pipe;
+var length = _require2.length;
+var equals = _require2.equals;
+var compose = _require2.compose;
+var filter = _require2.filter;
+var partial = _require2.partial;
+var always = _require2.always;
+var flip = _require2.flip;
+var isEmpty = _require2.isEmpty;
+
+var RESET_AFTER = 2000;
 var MAX_INTERVAL = 1000;
 var KONAMI = [38, 38, 40, 40, 37, 39, 37, 39, 66, 65];
 var KEYS = { 38: '↑', 40: '↓', 37: '←', 39: '→', 66: 'b', 65: 'a' };
-var list = unapply(identity);
+
+var init = always([]);
+var showAlert = function showAlert() {
+  return window.alert('KONAMI CODE BOOYAA!');
+};
+
+var Action = Type({
+  Keydown: [Number, Number],
+  Reset: []
+});
 
 var keyDowns$ = kb.keyDowns();
 var interval$ = timeInterval(keyDowns$);
-var keyAndInterval$ = liftN(2, list)(keyDowns$, interval$.map(prop('interval')));
+var keyAndInterval$ = liftN(2, Action.Keydown)(keyDowns$, interval$.map(prop('interval')));
+var actions$ = stream();
+flyd.on(actions$, keyAndInterval$);
 
-var correctSeq$ = flyd.scan(function (seq, vals) {
-  var _vals = _slicedToArray(vals, 2);
-
-  var key = _vals[0];
-  var interval = _vals[1];
-
+var tryKeyOnSeq = curry(function (key, interval, seq) {
   var correct = KONAMI[seq.length] === key;
   if (seq.length > 0 && interval <= MAX_INTERVAL && correct) return seq.concat(key);else if (correct) return [key];else return [];
-}, [], keyAndInterval$);
+});
 
-var isCorrect$ = flyd.transduce(compose(filter(pipe(length, equals(__, KONAMI.length))), map(T)), correctSeq$);
+var update = Action.caseOn({
+  Keydown: tryKeyOnSeq,
+  Reset: init
+});
 
-var onCorrect = function onCorrect() {
-  correctSeq$([]);
-  window.alert('Correct!');
-};
+var model$ = flyd.scan(flip(update), init(), actions$);
+var recentKeys$ = inLast(RESET_AFTER, keyAndInterval$);
+var isInactive$ = flyd.transduce(filter(isEmpty), recentKeys$);
+var isCorrect$ = flyd.transduce(compose(filter(pipe(length, equals(__, KONAMI.length))), map(T)), model$);
 
-// alert eats last keyup if it comes too early
-isCorrect$.map(partial(setTimeout, onCorrect, 500));
+isInactive$.map(forwardTo(actions$, Action.Reset));
+
+isCorrect$.map(pipe(partial(setTimeout, showAlert, 250), forwardTo(actions$, Action.Reset)));
 
 var container = document.getElementById('code');
 var render = function render(keys) {
@@ -70,18 +88,31 @@ var render = function render(keys) {
   forEach(appendChild(__, container), map(kbd, keys));
 };
 
-correctSeq$.map(render);
+flyd.on(render, model$);
 
-},{"flyd":15,"flyd-filter":2,"flyd-keyboard":3,"flyd-timeinterval":14,"ramda":22}],2:[function(require,module,exports){
+},{"../utils":24,"flyd":16,"flyd-forwardto":2,"flyd-inlast":3,"flyd-keyboard":4,"flyd-timeinterval":15,"ramda":23,"union-type":30}],2:[function(require,module,exports){
 var flyd = require('flyd');
 
-module.exports = function(fn, s) {
-  return flyd.stream([s], function(self) {
-    if (fn(s())) self(s.val);
-  });
-};
+module.exports = flyd.curryN(2, function(targ, fn) {
+  var s = flyd.stream();
+  flyd.map(function(v) { targ(fn(v)); }, s);
+  return s;
+});
 
-},{"flyd":15}],3:[function(require,module,exports){
+},{"flyd":16}],3:[function(require,module,exports){
+var flyd = require('flyd');
+
+module.exports = flyd.curryN(2, function(dur, s) {
+  var values = [];
+  return flyd.stream([s], function(self) {
+    setTimeout(function() {
+      self(values = values.slice(1));
+    }, dur);
+    return (values = values.concat([s()]));
+  });
+});
+
+},{"flyd":16}],4:[function(require,module,exports){
 var stream = require('flyd').stream;
 var dropRepeats = require('flyd-droprepeats').dropRepeats;
 var dropRepeatsWith = require('flyd-droprepeats').dropRepeatsWith;
@@ -193,7 +224,7 @@ function state(add, remove) {
   ], []);
 }
 
-},{"flyd":6,"flyd-droprepeats":4,"flyd-scanmerge":5,"keycode":13}],4:[function(require,module,exports){
+},{"flyd":7,"flyd-droprepeats":5,"flyd-scanmerge":6,"keycode":14}],5:[function(require,module,exports){
 var flyd = require('flyd');
 
 function dropRepeatsWith(eq, s) {
@@ -216,7 +247,7 @@ function strictEq(a, b) {
   return a === b;
 }
 
-},{"flyd":6}],5:[function(require,module,exports){
+},{"flyd":7}],6:[function(require,module,exports){
 var flyd = require('flyd');
 
 module.exports = flyd.curryN(2, function(pairs, acc) {
@@ -231,7 +262,7 @@ module.exports = flyd.curryN(2, function(pairs, acc) {
   }));
 });
 
-},{"flyd":6}],6:[function(require,module,exports){
+},{"flyd":7}],7:[function(require,module,exports){
 var curryN = require('ramda/src/curryN');
 
 'use strict';
@@ -520,7 +551,7 @@ module.exports = {
   immediate: immediate,
 };
 
-},{"ramda/src/curryN":9}],7:[function(require,module,exports){
+},{"ramda/src/curryN":10}],8:[function(require,module,exports){
 /**
  * A special placeholder value used to specify "gaps" within curried functions,
  * allowing partial application of any combination of arguments,
@@ -547,7 +578,7 @@ module.exports = {
  */
 module.exports = {ramda: 'placeholder'};
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 var _curry2 = require('./internal/_curry2');
 
 
@@ -594,7 +625,7 @@ module.exports = _curry2(function(n, fn) {
   }
 });
 
-},{"./internal/_curry2":11}],9:[function(require,module,exports){
+},{"./internal/_curry2":12}],10:[function(require,module,exports){
 var __ = require('./__');
 var _curry2 = require('./internal/_curry2');
 var _slice = require('./internal/_slice');
@@ -672,7 +703,7 @@ module.exports = _curry2(function curryN(length, fn) {
   });
 });
 
-},{"./__":7,"./arity":8,"./internal/_curry2":11,"./internal/_slice":12}],10:[function(require,module,exports){
+},{"./__":8,"./arity":9,"./internal/_curry2":12,"./internal/_slice":13}],11:[function(require,module,exports){
 var __ = require('../__');
 
 
@@ -696,7 +727,7 @@ module.exports = function _curry1(fn) {
   };
 };
 
-},{"../__":7}],11:[function(require,module,exports){
+},{"../__":8}],12:[function(require,module,exports){
 var __ = require('../__');
 var _curry1 = require('./_curry1');
 
@@ -730,7 +761,7 @@ module.exports = function _curry2(fn) {
   };
 };
 
-},{"../__":7,"./_curry1":10}],12:[function(require,module,exports){
+},{"../__":8,"./_curry1":11}],13:[function(require,module,exports){
 /**
  * An optimized, private array `slice` implementation.
  *
@@ -763,7 +794,7 @@ module.exports = function _slice(args, from, to) {
   }
 };
 
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 // Source: http://jsfiddle.net/vWx8V/
 // http://stackoverflow.com/questions/5603195/full-list-of-javascript-keycodes
 
@@ -912,7 +943,7 @@ for (var alias in aliases) {
   codes[alias] = aliases[alias]
 }
 
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', {
@@ -936,7 +967,7 @@ exports['default'] = function (inputStream) {
 };
 
 module.exports = exports['default'];
-},{"flyd":15}],15:[function(require,module,exports){
+},{"flyd":16}],16:[function(require,module,exports){
 var curryN = require('ramda/src/curryN');
 
 'use strict';
@@ -1230,19 +1261,19 @@ module.exports = {
   immediate: immediate,
 };
 
-},{"ramda/src/curryN":18}],16:[function(require,module,exports){
-arguments[4][7][0].apply(exports,arguments)
-},{"dup":7}],17:[function(require,module,exports){
+},{"ramda/src/curryN":19}],17:[function(require,module,exports){
 arguments[4][8][0].apply(exports,arguments)
-},{"./internal/_curry2":20,"dup":8}],18:[function(require,module,exports){
+},{"dup":8}],18:[function(require,module,exports){
 arguments[4][9][0].apply(exports,arguments)
-},{"./__":16,"./arity":17,"./internal/_curry2":20,"./internal/_slice":21,"dup":9}],19:[function(require,module,exports){
+},{"./internal/_curry2":21,"dup":9}],19:[function(require,module,exports){
 arguments[4][10][0].apply(exports,arguments)
-},{"../__":16,"dup":10}],20:[function(require,module,exports){
+},{"./__":17,"./arity":18,"./internal/_curry2":21,"./internal/_slice":22,"dup":10}],20:[function(require,module,exports){
 arguments[4][11][0].apply(exports,arguments)
-},{"../__":16,"./_curry1":19,"dup":11}],21:[function(require,module,exports){
+},{"../__":17,"dup":11}],21:[function(require,module,exports){
 arguments[4][12][0].apply(exports,arguments)
-},{"dup":12}],22:[function(require,module,exports){
+},{"../__":17,"./_curry1":20,"dup":12}],22:[function(require,module,exports){
+arguments[4][13][0].apply(exports,arguments)
+},{"dup":13}],23:[function(require,module,exports){
 //  Ramda v0.15.1
 //  https://github.com/ramda/ramda
 //  (c) 2013-2015 Scott Sauyet, Michael Hurley, and David Chambers
@@ -9029,4 +9060,282 @@ arguments[4][12][0].apply(exports,arguments)
 
 }.call(this));
 
-},{}]},{},[1]);
+},{}],24:[function(require,module,exports){
+'use strict';
+
+var _require = require('ramda');
+
+var partialRight = _require.partialRight;
+
+var stringify = partialRight(JSON.stringify, null, 2);
+
+module.exports = { stringify: stringify };
+
+},{"ramda":23}],25:[function(require,module,exports){
+var _curry2 = require('./internal/_curry2');
+
+
+/**
+ * Wraps a function of any arity (including nullary) in a function that accepts exactly `n`
+ * parameters. Unlike `nAry`, which passes only `n` arguments to the wrapped function,
+ * functions produced by `arity` will pass all provided arguments to the wrapped function.
+ *
+ * @func
+ * @memberOf R
+ * @sig (Number, (* -> *)) -> (* -> *)
+ * @category Function
+ * @param {Number} n The desired arity of the returned function.
+ * @param {Function} fn The function to wrap.
+ * @return {Function} A new function wrapping `fn`. The new function is
+ *         guaranteed to be of arity `n`.
+ * @deprecated since v0.15.0
+ * @example
+ *
+ *      var takesTwoArgs = function(a, b) {
+ *        return [a, b];
+ *      };
+ *      takesTwoArgs.length; //=> 2
+ *      takesTwoArgs(1, 2); //=> [1, 2]
+ *
+ *      var takesOneArg = R.arity(1, takesTwoArgs);
+ *      takesOneArg.length; //=> 1
+ *      // All arguments are passed through to the wrapped function
+ *      takesOneArg(1, 2); //=> [1, 2]
+ */
+module.exports = _curry2(function(n, fn) {
+  // jshint unused:vars
+  switch (n) {
+    case 0: return function() {return fn.apply(this, arguments);};
+    case 1: return function(a0) {return fn.apply(this, arguments);};
+    case 2: return function(a0, a1) {return fn.apply(this, arguments);};
+    case 3: return function(a0, a1, a2) {return fn.apply(this, arguments);};
+    case 4: return function(a0, a1, a2, a3) {return fn.apply(this, arguments);};
+    case 5: return function(a0, a1, a2, a3, a4) {return fn.apply(this, arguments);};
+    case 6: return function(a0, a1, a2, a3, a4, a5) {return fn.apply(this, arguments);};
+    case 7: return function(a0, a1, a2, a3, a4, a5, a6) {return fn.apply(this, arguments);};
+    case 8: return function(a0, a1, a2, a3, a4, a5, a6, a7) {return fn.apply(this, arguments);};
+    case 9: return function(a0, a1, a2, a3, a4, a5, a6, a7, a8) {return fn.apply(this, arguments);};
+    case 10: return function(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9) {return fn.apply(this, arguments);};
+    default: throw new Error('First argument to arity must be a non-negative integer no greater than ten');
+  }
+});
+
+},{"./internal/_curry2":28}],26:[function(require,module,exports){
+var _curry2 = require('./internal/_curry2');
+var _curryN = require('./internal/_curryN');
+var arity = require('./arity');
+
+
+/**
+ * Returns a curried equivalent of the provided function, with the
+ * specified arity. The curried function has two unusual capabilities.
+ * First, its arguments needn't be provided one at a time. If `g` is
+ * `R.curryN(3, f)`, the following are equivalent:
+ *
+ *   - `g(1)(2)(3)`
+ *   - `g(1)(2, 3)`
+ *   - `g(1, 2)(3)`
+ *   - `g(1, 2, 3)`
+ *
+ * Secondly, the special placeholder value `R.__` may be used to specify
+ * "gaps", allowing partial application of any combination of arguments,
+ * regardless of their positions. If `g` is as above and `_` is `R.__`,
+ * the following are equivalent:
+ *
+ *   - `g(1, 2, 3)`
+ *   - `g(_, 2, 3)(1)`
+ *   - `g(_, _, 3)(1)(2)`
+ *   - `g(_, _, 3)(1, 2)`
+ *   - `g(_, 2)(1)(3)`
+ *   - `g(_, 2)(1, 3)`
+ *   - `g(_, 2)(_, 3)(1)`
+ *
+ * @func
+ * @memberOf R
+ * @category Function
+ * @sig Number -> (* -> a) -> (* -> a)
+ * @param {Number} length The arity for the returned function.
+ * @param {Function} fn The function to curry.
+ * @return {Function} A new, curried function.
+ * @see R.curry
+ * @example
+ *
+ *      var addFourNumbers = function() {
+ *        return R.sum([].slice.call(arguments, 0, 4));
+ *      };
+ *
+ *      var curriedAddFourNumbers = R.curryN(4, addFourNumbers);
+ *      var f = curriedAddFourNumbers(1, 2);
+ *      var g = f(3);
+ *      g(4); //=> 10
+ */
+module.exports = _curry2(function curryN(length, fn) {
+  return arity(length, _curryN(length, [], fn));
+});
+
+},{"./arity":25,"./internal/_curry2":28,"./internal/_curryN":29}],27:[function(require,module,exports){
+/**
+ * Optimized internal two-arity curry function.
+ *
+ * @private
+ * @category Function
+ * @param {Function} fn The function to curry.
+ * @return {Function} The curried function.
+ */
+module.exports = function _curry1(fn) {
+  return function f1(a) {
+    if (arguments.length === 0) {
+      return f1;
+    } else if (a != null && a['@@functional/placeholder'] === true) {
+      return f1;
+    } else {
+      return fn(a);
+    }
+  };
+};
+
+},{}],28:[function(require,module,exports){
+var _curry1 = require('./_curry1');
+
+
+/**
+ * Optimized internal two-arity curry function.
+ *
+ * @private
+ * @category Function
+ * @param {Function} fn The function to curry.
+ * @return {Function} The curried function.
+ */
+module.exports = function _curry2(fn) {
+  return function f2(a, b) {
+    var n = arguments.length;
+    if (n === 0) {
+      return f2;
+    } else if (n === 1 && a != null && a['@@functional/placeholder'] === true) {
+      return f2;
+    } else if (n === 1) {
+      return _curry1(function(b) { return fn(a, b); });
+    } else if (n === 2 && a != null && a['@@functional/placeholder'] === true &&
+                          b != null && b['@@functional/placeholder'] === true) {
+      return f2;
+    } else if (n === 2 && a != null && a['@@functional/placeholder'] === true) {
+      return _curry1(function(a) { return fn(a, b); });
+    } else if (n === 2 && b != null && b['@@functional/placeholder'] === true) {
+      return _curry1(function(b) { return fn(a, b); });
+    } else {
+      return fn(a, b);
+    }
+  };
+};
+
+},{"./_curry1":27}],29:[function(require,module,exports){
+var arity = require('../arity');
+
+
+/**
+ * Internal curryN function.
+ *
+ * @private
+ * @category Function
+ * @param {Number} length The arity of the curried function.
+ * @return {array} An array of arguments received thus far.
+ * @param {Function} fn The function to curry.
+ */
+module.exports = function _curryN(length, received, fn) {
+  return function() {
+    var combined = [];
+    var argsIdx = 0;
+    var left = length;
+    var combinedIdx = 0;
+    while (combinedIdx < received.length || argsIdx < arguments.length) {
+      var result;
+      if (combinedIdx < received.length &&
+          (received[combinedIdx] == null ||
+           received[combinedIdx]['@@functional/placeholder'] !== true ||
+           argsIdx >= arguments.length)) {
+        result = received[combinedIdx];
+      } else {
+        result = arguments[argsIdx];
+        argsIdx += 1;
+      }
+      combined[combinedIdx] = result;
+      if (result == null || result['@@functional/placeholder'] !== true) {
+        left -= 1;
+      }
+      combinedIdx += 1;
+    }
+    return left <= 0 ? fn.apply(this, combined) : arity(left, _curryN(length, combined, fn));
+  };
+};
+
+},{"../arity":25}],30:[function(require,module,exports){
+var curryN = require('ramda/src/curryN');
+
+function isString(s) { return typeof s === 'string'; }
+function isNumber(n) { return typeof n === 'number'; }
+function isObject(value) {
+  var type = typeof value;
+  return !!value && (type == 'object' || type == 'function');
+}
+function isFunction(f) { return typeof f === 'function'; }
+var isArray = Array.isArray || function(a) { return 'length' in a; };
+
+var mapConstrToFn = curryN(2, function(group, constr) {
+  return constr === String    ? isString
+       : constr === Number    ? isNumber
+       : constr === Object    ? isObject
+       : constr === Array     ? isArray
+       : constr === Function  ? isFunction
+       : constr === undefined ? group
+                              : constr;
+});
+
+function Constructor(group, name, validators) {
+  validators = validators.map(mapConstrToFn(group));
+  var constructor = curryN(validators.length, function() {
+    var val = [], v, validator;
+    for (var i = 0; i < arguments.length; ++i) {
+      v = arguments[i];
+      validator = validators[i];
+      if ((typeof validator === 'function' && validator(v)) ||
+          (v !== undefined && v !== null && v.of === validator)) {
+        val[i] = arguments[i];
+      } else {
+        throw new TypeError('wrong value ' + v + ' passed to location ' + i + ' in ' + name);
+      }
+    }
+    val.of = group;
+    val.name = name;
+    return val;
+  });
+  return constructor;
+}
+
+function rawCase(type, cases, action, arg) {
+  if (type !== action.of) throw new TypeError('wrong type passed to case');
+  var name = action.name in cases ? action.name
+           : '_' in cases         ? '_'
+                                  : undefined;
+  if (name === undefined) {
+    throw new Error('unhandled value passed to case');
+  } else {
+    return cases[name].apply(undefined, arg !== undefined ? action.concat([arg]) : action);
+  }
+}
+
+var typeCase = curryN(3, rawCase);
+var caseOn = curryN(4, rawCase);
+
+function Type(desc) {
+  var obj = {};
+  for (var key in desc) {
+    obj[key] = Constructor(obj, key, desc[key]);
+  }
+  obj.case = typeCase(obj);
+  obj.caseOn = caseOn(obj);
+  return obj;
+}
+
+module.exports = Type;
+
+},{"ramda/src/curryN":26}]},{},[1]);

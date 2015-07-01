@@ -1,21 +1,33 @@
 const flyd = require('flyd');
 const {stream} = flyd;
 const kb = require('flyd-keyboard');
-const ffilter = require('flyd-filter');
+const forwardTo = require('flyd-forwardto');
 const timeInterval = require('flyd-timeinterval');
-const {T, map, liftN, prop, unapply, identity, invoker, forEach, __, pipe, length, equals, compose, filter, partial} = require('ramda');
+const inLast = require('flyd-inlast');
+const {stringify} = require('../utils');
+const Type = require('union-type');
+const {curry, T, map, liftN, prop, invoker, forEach, __, pipe, length, equals, compose, filter, partial, always, flip, isEmpty} = require('ramda');
 
+const RESET_AFTER = 2000;
 const MAX_INTERVAL = 1000;
 const KONAMI = [38, 38, 40, 40, 37, 39, 37, 39, 66, 65];
 const KEYS = { 38: '↑', 40: '↓', 37: '←', 39: '→', 66: 'b', 65: 'a' };
-const list = unapply(identity);
+
+const init = always([]);
+const showAlert = () => window.alert('KONAMI CODE BOOYAA!');
+
+const Action = Type({
+  Keydown: [Number, Number],
+  Reset: []
+});
 
 const keyDowns$ = kb.keyDowns();
 const interval$ = timeInterval(keyDowns$);
-const keyAndInterval$ = liftN(2, list)(keyDowns$, interval$.map(prop('interval')));
+const keyAndInterval$ = liftN(2, Action.Keydown)(keyDowns$, interval$.map(prop('interval')));
+const actions$ = stream();
+flyd.on(actions$, keyAndInterval$);
 
-const correctSeq$ = flyd.scan((seq, vals) => {
-  const [key, interval] = vals;
+const tryKeyOnSeq = curry((key, interval, seq) => {
   const correct = KONAMI[seq.length] === key;
   if (seq.length > 0 && interval <= MAX_INTERVAL && correct)
     return seq.concat(key);
@@ -23,20 +35,27 @@ const correctSeq$ = flyd.scan((seq, vals) => {
     return [key];
   else
     return [];
-}, [], keyAndInterval$);
+});
 
+const update = Action.caseOn({
+  Keydown : tryKeyOnSeq,
+  Reset   : init
+});
+
+const model$ = flyd.scan(flip(update), init(), actions$);
+const recentKeys$ = inLast(RESET_AFTER, keyAndInterval$);
+const isInactive$ = flyd.transduce(filter(isEmpty), recentKeys$);
 const isCorrect$ = flyd.transduce(compose(
   filter(pipe(length, equals(__, KONAMI.length))),
   map(T)
-), correctSeq$);
+), model$);
 
-const onCorrect = () => {
-  correctSeq$([]);
-  window.alert('Correct!');
-};
+isInactive$.map(forwardTo(actions$, Action.Reset));
 
-// alert eats last keyup if it comes too early
-isCorrect$.map(partial(setTimeout, onCorrect, 500));
+isCorrect$.map(pipe(
+  partial(setTimeout, showAlert, 250),
+  forwardTo(actions$, Action.Reset)
+));
 
 const container = document.getElementById('code');
 const render = (keys) => {
@@ -51,5 +70,4 @@ const render = (keys) => {
   forEach(appendChild(__, container), map(kbd, keys));
 };
 
-
-correctSeq$.map(render);
+flyd.on(render, model$);
