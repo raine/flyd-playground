@@ -50,9 +50,7 @@ const update = Action.caseOn({
 const model$ = flyd.scan(flip(update), init(), actions$);
 const recentKeys$ = inLast(RESET_AFTER, keyAndInterval$);
 const isInactive$ = flyd.transduce(filter(isEmpty), recentKeys$);
-const isCorrect$ = flyd.transduce(
-  filter(pipe(length, equals(__, KONAMI.length)))
-, model$);
+const isCorrect$ = flyd.transduce(filter(equals(KONAMI)), model$);
 
 isInactive$.map(forwardTo(actions$, Action.Reset));
 
