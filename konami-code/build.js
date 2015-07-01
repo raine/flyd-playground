@@ -18,7 +18,6 @@ var Type = require('union-type');
 var _require2 = require('ramda');
 
 var curry = _require2.curry;
-var T = _require2.T;
 var map = _require2.map;
 var liftN = _require2.liftN;
 var prop = _require2.prop;
@@ -34,6 +33,7 @@ var partial = _require2.partial;
 var always = _require2.always;
 var flip = _require2.flip;
 var isEmpty = _require2.isEmpty;
+var tap = _require2.tap;
 
 var RESET_AFTER = 2000;
 var MAX_INTERVAL = 1000;
@@ -41,11 +41,14 @@ var KONAMI = [38, 38, 40, 40, 37, 39, 37, 39, 66, 65];
 var KEYS = { 38: '↑', 40: '↓', 37: '←', 39: '→', 66: 'b', 65: 'a' };
 
 var init = always([]);
-var showAlert = function showAlert() {
-  return window.alert('KONAMI CODE BOOYAA!');
-};
+
+var playSound = (function () {
+  var audio = new Audio('sound.mp3');
+  return audio.play.bind(audio);
+})();
 
 var Action = Type({
+  // keycode, interval
   Keydown: [Number, Number],
   Reset: []
 });
@@ -69,11 +72,11 @@ var update = Action.caseOn({
 var model$ = flyd.scan(flip(update), init(), actions$);
 var recentKeys$ = inLast(RESET_AFTER, keyAndInterval$);
 var isInactive$ = flyd.transduce(filter(isEmpty), recentKeys$);
-var isCorrect$ = flyd.transduce(compose(filter(pipe(length, equals(__, KONAMI.length))), map(T)), model$);
+var isCorrect$ = flyd.transduce(filter(pipe(length, equals(__, KONAMI.length))), model$);
 
 isInactive$.map(forwardTo(actions$, Action.Reset));
 
-isCorrect$.map(pipe(partial(setTimeout, showAlert, 250), forwardTo(actions$, Action.Reset)));
+isCorrect$.map(pipe(tap(playSound), forwardTo(actions$, Action.Reset)));
 
 var container = document.getElementById('code');
 var render = function render(keys) {

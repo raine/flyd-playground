@@ -6,7 +6,7 @@ const timeInterval = require('flyd-timeinterval');
 const inLast = require('flyd-inlast');
 const {stringify} = require('../utils');
 const Type = require('union-type');
-const {curry, T, map, liftN, prop, invoker, forEach, __, pipe, length, equals, compose, filter, partial, always, flip, isEmpty} = require('ramda');
+const {curry, map, liftN, prop, invoker, forEach, __, pipe, length, equals, compose, filter, partial, always, flip, isEmpty, tap} = require('ramda');
 
 const RESET_AFTER = 2000;
 const MAX_INTERVAL = 1000;
@@ -14,9 +14,14 @@ const KONAMI = [38, 38, 40, 40, 37, 39, 37, 39, 66, 65];
 const KEYS = { 38: '↑', 40: '↓', 37: '←', 39: '→', 66: 'b', 65: 'a' };
 
 const init = always([]);
-const showAlert = () => window.alert('KONAMI CODE BOOYAA!');
+
+const playSound = (function() {
+  const audio = new Audio('sound.mp3');
+  return audio.play.bind(audio);
+}());
 
 const Action = Type({
+  // keycode, interval
   Keydown: [Number, Number],
   Reset: []
 });
@@ -45,15 +50,14 @@ const update = Action.caseOn({
 const model$ = flyd.scan(flip(update), init(), actions$);
 const recentKeys$ = inLast(RESET_AFTER, keyAndInterval$);
 const isInactive$ = flyd.transduce(filter(isEmpty), recentKeys$);
-const isCorrect$ = flyd.transduce(compose(
-  filter(pipe(length, equals(__, KONAMI.length))),
-  map(T)
-), model$);
+const isCorrect$ = flyd.transduce(
+  filter(pipe(length, equals(__, KONAMI.length)))
+, model$);
 
 isInactive$.map(forwardTo(actions$, Action.Reset));
 
 isCorrect$.map(pipe(
-  partial(setTimeout, showAlert, 250),
+  tap(playSound),
   forwardTo(actions$, Action.Reset)
 ));
 
